@@ -1,9 +1,9 @@
-from Tensor import Tensor
+from simplegrad.Tensor import Tensor
 import numpy as np
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-from optim import SGD
+from simplegrad.optim import SGD
 
 def get_weights(in_dim, out_dim):
     # Xavier/Glorot initialization
