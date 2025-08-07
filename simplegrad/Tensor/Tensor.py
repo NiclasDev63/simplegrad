@@ -8,7 +8,7 @@ class Tensor:
     def __init__(
         self,
         item: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
-        requires_grad: bool = True,
+        requires_grad: bool = False,
     ) -> None:
         self.item: np.ndarray = item
         self.requires_grad = requires_grad

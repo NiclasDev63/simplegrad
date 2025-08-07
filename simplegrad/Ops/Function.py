@@ -33,6 +33,20 @@ class Function:
             k: t if isinstance(t, Tensor) else Tensor(t) for k, t in named_data.items()
         }
 
+    @staticmethod
+    def _compute_requires_grad(
+        curr: "Tensor", fn_args: list["Tensor"], fn_kwargs: dict[str, "Tensor"]
+    ) -> bool:
+        """
+        Internal function to compute whether the resulting Tensor requires gradients.
+        True if at least one Tensor involved in this operation has requires_grad=True
+        """
+        if curr.requires_grad:
+            return True
+        return any(item.requires_grad for item in fn_args) or any(
+            item.requires_grad for item in fn_kwargs.values()
+        )
+
     def apply(
         self: "Tensor",
         op_fn: "Function",
@@ -44,13 +58,17 @@ class Function:
         fn_args = op_fn._args_to_tensor(*fn_args)
         fn_kwargs = op_fn._kwargs_to_tensor(**fn_kwargs)
         ctx = op_fn(self, *fn_args)
+        requires_grad = op_fn._compute_requires_grad(
+            curr=self, fn_args=fn_args, fn_kwargs=fn_kwargs
+        )
         res = Tensor(
-            op_fn.forward(
+            item=op_fn.forward(
                 ctx,
                 self.item,
                 *[t.item for t in fn_args],
                 **{k: t.item for k, t in fn_kwargs.items()}
             ),
+            requires_grad=requires_grad,
         )
         res._ctx = ctx
         return res

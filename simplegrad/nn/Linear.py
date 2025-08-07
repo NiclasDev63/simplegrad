@@ -13,7 +13,7 @@ class Linear(Module):
         self.use_bias = use_bias
 
         self.weight = Parameter(Tensor(xavier_init(self.in_dim, self.out_dim)))
-
+        
         if self.use_bias:
             self.bias = Parameter(Tensor(np.zeros(self.out_dim)))
 

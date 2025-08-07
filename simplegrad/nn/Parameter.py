@@ -6,8 +6,6 @@ class Parameter(Tensor):
 
     def __init__(self, params: Tensor):
         assert isinstance(params, Tensor), "parameter has to be a tensor"
-        super().__init__(params)
-
         # automatically set required_grad True for all parameters
         # because if it's a parameter, we want to train it
-        params.requires_grad = True
+        super().__init__(params, requires_grad=True)
