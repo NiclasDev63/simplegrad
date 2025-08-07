@@ -4,30 +4,14 @@ from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 from simplegrad.optim import SGD
-
-def get_weights(in_dim, out_dim):
-    # Xavier/Glorot initialization
-    std = np.sqrt(2.0 / (in_dim + out_dim))
-    return np.random.normal(0, std, (in_dim, out_dim)).astype(np.float32)
+from simplegrad import nn
 
 
-class Linear:
+class MLP(nn.Module):
     def __init__(self, in_dim: int, out_dim: int):
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-
-        weights = get_weights(self.in_dim, self.out_dim)
-        self.weight = Tensor(weights)
-        self.bias = Tensor(np.zeros(self.out_dim))
-
-    def forward(self, x: Tensor):
-        return x.dot(self.weight)
-
-
-class MLP:
-    def __init__(self, in_dim: int, out_dim: int):
-        self.l1 = Linear(in_dim, 128)
-        self.l2 = Linear(128, out_dim)
+        super().__init__()
+        self.l1 = nn.Linear(in_dim, 128)
+        self.l2 = nn.Linear(128, out_dim)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.l1.forward(x)
@@ -36,6 +20,7 @@ class MLP:
 
 
 model = MLP(8 * 8, 10)
+model.named_parameters()
 digits = datasets.load_digits()
 n_samples = len(digits.images)
 data = digits.images.reshape((n_samples, -1))
@@ -43,7 +28,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     data, digits.target, test_size=0.3, shuffle=False
 )
 lr = 0.001
-optim = SGD(params=[model.l1.weight, model.l2.weight], lr=lr)
+optim = SGD(params=model.parameters(), lr=lr)
 for epoch in range(1):
     progress_bar = tqdm(zip(X_train, y_train), total=len(y_train), desc="loss: 0.0")
     for sample, target in progress_bar:

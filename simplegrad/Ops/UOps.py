@@ -118,6 +118,7 @@ class Neg(Function):
         return -grad_output
 
 
+# TODO: add optional temperature
 class Softmax(Function):
     @staticmethod
     def forward(ctx: "Softmax", x: np.ndarray, axis: np.ndarray) -> np.ndarray:
