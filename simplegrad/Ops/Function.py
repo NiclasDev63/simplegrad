@@ -19,7 +19,7 @@ class Function:
     def _args_to_tensor(
         *data: Union["Tensor", np.ndarray, int, float]
     ) -> list["Tensor"]:
-        from simplegrad.Tensor.Tensor import Tensor
+        from simplegrad import Tensor
 
         return [d if isinstance(d, Tensor) else Tensor(d) for d in data]
 
@@ -27,7 +27,7 @@ class Function:
     def _kwargs_to_tensor(
         **named_data: Union["Tensor", np.ndarray, int, float]
     ) -> dict[str, "Tensor"]:
-        from simplegrad.Tensor.Tensor import Tensor
+        from simplegrad import Tensor
 
         return {
             k: t if isinstance(t, Tensor) else Tensor(t) for k, t in named_data.items()
@@ -47,17 +47,35 @@ class Function:
             item.requires_grad for item in fn_kwargs.values()
         )
 
+    @staticmethod
+    def _get_parents(
+        fn_args: list["Tensor"], fn_kwargs: dict[str, "Tensor"]
+    ) -> list["Tensor"]:
+        parents = []
+        for tensor in fn_args:
+            if tensor.requires_grad:
+                parents.append(tensor)
+
+        for tensor in fn_kwargs.values():
+            if tensor.requires_grad:
+                parents.append(tensor)
+        return parents
+
     def apply(
         self: "Tensor",
         op_fn: "Function",
         *fn_args: Union["Tensor", np.ndarray, int, float],
         **fn_kwargs: Union["Tensor", np.ndarray, int, float]
     ) -> "Tensor":
-        from simplegrad.Tensor.Tensor import Tensor
+        from simplegrad import Tensor
 
         fn_args = op_fn._args_to_tensor(*fn_args)
         fn_kwargs = op_fn._kwargs_to_tensor(**fn_kwargs)
-        ctx = op_fn(self, *fn_args)
+
+        # only add parents which requires gradients to the graph to minimize memory footprint
+        parents = op_fn._get_parents(fn_args=fn_args, fn_kwargs=fn_kwargs)
+        ctx = op_fn(self, *parents)
+
         requires_grad = op_fn._compute_requires_grad(
             curr=self, fn_args=fn_args, fn_kwargs=fn_kwargs
         )

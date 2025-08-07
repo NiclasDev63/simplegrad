@@ -1,5 +1,5 @@
 from tkinter.constants import X
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from .Function import Function
 import numpy as np
 from utils import handle_axis
@@ -118,18 +118,44 @@ class Neg(Function):
         return -grad_output
 
 
-# TODO: add optional temperature
 class Softmax(Function):
     @staticmethod
-    def forward(ctx: "Softmax", x: np.ndarray, axis: np.ndarray) -> np.ndarray:
+    def _forward(
+        x: np.ndarray,
+        axis: Union[np.ndarray, int],
+        temperature: Union[np.ndarray, float] = 1,
+    ) -> np.ndarray:
+
+        axis = Softmax._unwrap(axis)
+        axis = int(axis)
+        temperature = Softmax._unwrap(temperature)
+        temperature = float(temperature)
+
+        x = x / temperature
+
         # Subtract max for numerical stability
-        axis = int(axis[0])
         x_max = np.max(x, axis=axis, keepdims=True)
         x_stable = x - x_max
         exp_x = np.exp(x_stable)
         sum_exp = np.sum(exp_x, axis=axis, keepdims=True)
         softmax_output = exp_x / (sum_exp + 1e-8)
+        return softmax_output
 
+    @staticmethod
+    def _unwrap(val: Union[np.ndarray, int]):
+        if isinstance(val, np.ndarray):
+            val = val[0]
+        return val
+
+    @staticmethod
+    def forward(
+        ctx: "Softmax", x: np.ndarray, axis: np.ndarray, temperature: np.ndarray
+    ) -> np.ndarray:
+        softmax_output = Softmax._forward(x, axis=axis, temperature=temperature)
+        axis = Softmax._unwrap(axis)
+        axis = int(axis)
+        temperature = Softmax._unwrap(temperature)
+        temperature = float(temperature)
         ctx.save_for_backward(softmax_output, axis)
         return softmax_output
 
@@ -139,7 +165,6 @@ class Softmax(Function):
     ) -> Tuple[np.ndarray, np.ndarray]:
         softmax_output, axis = ctx.saved_tensors
 
-        # Gradient for softmax: softmax * (grad_output - sum(grad_output * softmax, axis=axis))
         grad_sum = np.sum(grad_output * softmax_output, axis=axis, keepdims=True)
         grad = softmax_output * (grad_output - grad_sum)
 

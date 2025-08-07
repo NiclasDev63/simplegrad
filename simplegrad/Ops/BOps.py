@@ -1,6 +1,7 @@
 from typing import Tuple
 import numpy as np
 from .Function import Function
+from .UOps import Softmax
 
 
 class Add(Function):
@@ -115,3 +116,25 @@ class Dot(Function):
             grad_y = np.matmul(x.T, grad_output)
 
         return grad_x, grad_y
+
+
+class CrossEntropyLoss(Function):
+    @staticmethod
+    def forward(
+        ctx: "CrossEntropyLoss", logits: np.ndarray, targets: np.ndarray
+    ) -> np.ndarray:
+        # we fuse the softmax and the cross entropy loss intro one op to allow for more efficient backprob
+        probs = Softmax._forward(logits, axis=-1)
+        probs = probs + 1e-8
+        ctx.save_for_backward(probs, targets)
+        log_probs = np.log(probs)
+        loss = -(targets * log_probs).sum(axis=-1)
+        return loss.mean()
+
+    @staticmethod
+    def backward(ctx: "CrossEntropyLoss", grad_output: np.ndarray) -> np.ndarray:
+        probs, targets = ctx.saved_tensors
+
+        grad_logits = (probs - targets) * grad_output
+
+        return grad_logits

@@ -7,8 +7,12 @@ def relu(x: Tensor):
     return x.relu()
 
 
-def softmax(x: Tensor, axis: int = -1):
-    return x.softmax(axis=axis)
+def softmax(x: Tensor, axis: int = -1, temperature: float = 1):
+    return x.softmax(axis=axis, temperature=temperature)
+
+
+def cross_entropy_loss(logits: Tensor, targets: Tensor):
+    return logits.cross_entropy_loss(targets)
 
 
 def sigmoid(x: Tensor):

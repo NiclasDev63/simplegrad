@@ -1,5 +1,4 @@
 from .Optimizer import Optimizer
-from simplegrad import Tensor
 import numpy as np
 
 
@@ -21,6 +20,9 @@ class Adam(Optimizer):
         self._init_moments()
 
         self.eps = eps
+
+        if 0 > beta1 > 0.9999 or 0 > beta2 > 0.9999:
+            raise ValueError("Betas have to be between 0 and 1 (exclusive)")
 
     def _init_moments(self):
         for param in self.params:

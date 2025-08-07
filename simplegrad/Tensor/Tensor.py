@@ -51,9 +51,16 @@ class Tensor:
 
         grads = self._ctx.backward(self._ctx, self.grad)
 
-        if len(self._ctx.parents) == 1:
+        if len(self._ctx.parents) == 1 and not isinstance(grads, tuple):
             grads = [grads]
+
+        # only extract the gradients needed
+        # we can have less parents than gradients, since we 
+        grads = grads[:len(self._ctx.parents)]
+
         for p, g in zip(self._ctx.parents, grads):
+            if isinstance(g, tuple):
+                print(p.shape, len(g))
             if p.shape != g.shape:
                 g = unbroadcast(g, p.shape)
             if p.requires_grad == False:
@@ -103,22 +110,27 @@ class Tensor:
 
     def log(self) -> "Tensor": ...
 
-    def softmax(self, axis: int = -1) -> "Tensor":
-        return self._softmax(axis=axis)
+    def softmax(self, axis: int = -1, temperature: int = 1) -> "Tensor":
+        return self._softmax(axis=axis, temperature=temperature)
 
     def cross_entropy_loss(
         self,
         targets: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
-    ):
-        targets = Tensor(targets)
+    ): ...
 
-        probs = self.softmax()
+    # def cross_entropy_loss(
+    #     self,
+    #     targets: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
+    # ):
+    #     targets = Tensor(targets)
 
-        safe_probs = probs + 1e-8
-        log_probs = safe_probs.log()
-        loss = targets.dot(log_probs)
-        loss = -loss
-        return probs, loss
+    #     probs = self.softmax()
+
+    #     safe_probs = probs + 1e-8
+    #     log_probs = safe_probs.log()
+    #     loss = (targets * log_probs).sum(-1)
+    #     loss = -loss
+    #     return loss.mean()
 
     def neg(self) -> "Tensor": ...
     def __neg__(self):
@@ -144,6 +156,7 @@ def _register_operations():
             Div,
             Pow,
             Dot,
+            CrossEntropyLoss,
             Sum,
             Reshape,
             Relu,
@@ -160,6 +173,7 @@ def _register_operations():
         register("div", Div)
         register("pow", Pow)
         register("dot", Dot)
+        register("cross_entropy_loss", CrossEntropyLoss)
         register("_sum", Sum)
         register("_reshape", Reshape)
         register("relu", Relu)
