@@ -132,7 +132,7 @@ class Tensor:
     def pow(self, exponent: Union["Tensor", np.ndarray, int, float]) -> "Tensor": ...
     def __pow__(self, exponent: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         return self.pow(exponent)
-        
+
     def __rpow__(self, base: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         base_t = base if isinstance(base, Tensor) else Tensor(base)
         return base_t.pow(self)
