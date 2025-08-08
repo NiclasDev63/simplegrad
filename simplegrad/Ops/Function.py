@@ -1,11 +1,13 @@
+from threading import stack_size
 from typing import Union, List, Any, Tuple, TYPE_CHECKING
 import numpy as np
 
-ValueLike = Union[np.ndarray, float, int]
-
 
 if TYPE_CHECKING:
-    from simplegrad.Tensor.Tensor import Tensor
+    from simplegrad import Tensor
+
+
+ValueLike = Union["Tensor", np.ndarray, float, int]
 
 
 class Function:
@@ -17,13 +19,40 @@ class Function:
         self.in_place = in_place
 
     def save_for_backward(self, *x: Any) -> None:
-        self.saved_tensors.extend(x)
+        from simplegrad import Tensor
+
+        # Save tensors and their version counters to detect in-place changes
+        for obj in x:
+            if isinstance(obj, Tensor):
+                self.saved_tensors.append((obj._version, obj))
+            else:
+                self.saved_tensors.append(obj)
+
+    @staticmethod
+    def is_pair(x: object) -> bool:
+        from simplegrad import Tensor
+
+        return (
+            isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[0], int)
+            and isinstance(x[1], Tensor)
+        )
 
     @staticmethod
     def _unwrap_args(*data: Union["Tensor", np.ndarray, int, float]) -> list["Tensor"]:
         from simplegrad import Tensor
 
-        return [d.item if isinstance(d, Tensor) else d for d in data]
+        result = []
+        for d in data:
+            # Only treat (version, Tensor) as a saved-tensor pair; leave normal tuples (e.g. indices) intact
+            if Function.is_pair(d):
+                result.append(d[1].item)
+            elif isinstance(d, Tensor):
+                result.append(d.item)
+            else:
+                result.append(d)
+        return result[0] if len(result) == 1 else result
 
     @staticmethod
     def _unwrap_kwargs(
@@ -76,16 +105,18 @@ class Function:
         ctx = op_fn(self, *parents, in_place=is_in_place)
 
         requires_grad = op_fn._compute_requires_grad(curr=self, parents=parents)
+        # important to update the current tensor version AFTER the new op
 
-        # important that we unwrap the args and kwargs AFTER registering them as parents
-        # and checking if the resulting tensor should have requires_grad=True
-        fn_args = op_fn._unwrap_args(*fn_args)
-        fn_kwargs = op_fn._unwrap_kwargs(**fn_kwargs)
         res = Tensor(
-            item=op_fn.forward(ctx, self.item, *fn_args, **fn_kwargs),
+            item=op_fn.forward(ctx, self, *fn_args, **fn_kwargs),
             requires_grad=requires_grad,
         )
+
+        # Bump version AFTER forward for in-place ops so RHS saved tensors see pre-bump version
+        if is_in_place:
+            self._version = self._version + 1
         res._ctx = ctx
+        res._version = self._version
         return res
 
     @staticmethod

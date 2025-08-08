@@ -1,19 +1,23 @@
-from tkinter.constants import X
 from typing import Any, Optional, Tuple, Union
+
+from simplegrad import Tensor
 from .Function import Function, ValueLike
 import numpy as np
-from simplegrad.utils import handle_axis
+from simplegrad.utils import handle_axis, _assert_allowed_backward_call
 
 
 class Sum(Function):
     @staticmethod
     def forward(
         ctx: "Sum",
-        x: np.ndarray,
+        x: Tensor,
         axis: Optional[int | tuple[int, int]] = None,
     ) -> np.ndarray:
+        x, axis = Function._unwrap_args(x, axis)
+
         axis = handle_axis(axis, ndim=x.ndim)
         ctx.save_for_backward(x, axis)
+
         return np.sum(x, axis=axis)
 
     @staticmethod
@@ -34,8 +38,10 @@ class Sum(Function):
 
 class Reshape(Function):
     @staticmethod
-    def forward(ctx: "Reshape", x: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
+    def forward(ctx: "Reshape", x: Tensor, shape: Tuple[int, ...]) -> np.ndarray:
+        x = Function._unwrap_args(x)
         ctx.save_for_backward(x)
+
         shape = [int(s) for s in shape]
         return x.reshape(shape)
 
@@ -47,13 +53,16 @@ class Reshape(Function):
 
 class Index(Function):
     @staticmethod
-    def forward(ctx: "Index", x: np.ndarray, index: Any) -> np.ndarray:
+    def forward(ctx: "Index", x: Tensor, index: Any) -> np.ndarray:
         ctx.save_for_backward(x, index)
+        x, index = Function._unwrap_args(x, index)
         return x[index]
 
     @staticmethod
     def backward(ctx: "Index", grad_output: np.ndarray) -> np.ndarray:
         x, index = ctx.saved_tensors
+        _assert_allowed_backward_call(x, index)
+        x, index = Function._unwrap_args(x, index)
         grad = np.zeros_like(x)
         grad[index] = grad_output
         return grad
@@ -64,8 +73,9 @@ class CopySlices(Function):
 
     @staticmethod
     def forward(
-        ctx: "CopySlices", x: np.ndarray, index: Any, value: ValueLike
+        ctx: "CopySlices", x: Tensor, index: Any, value: ValueLike
     ) -> np.ndarray:
+        x, index, value = Function._unwrap_args(x, index, value)
         ctx.save_for_backward(index)
         x[index] = value
         return x
@@ -92,13 +102,16 @@ class Relu(Function):
         return x.clip(min=0)
 
     @staticmethod
-    def forward(ctx: "Relu", x: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Relu", x: Tensor) -> np.ndarray:
+        x = Function._unwrap_args(x)
         ctx.save_for_backward(x)
+
         return Relu._forward(x)
 
     @staticmethod
     def backward(ctx: "Relu", grad_output: np.ndarray) -> np.ndarray:
         x = ctx.saved_tensors[0]
+
         grad = grad_output.copy()
         grad[x < 0] = 0
         return grad
@@ -110,13 +123,16 @@ class Sigmoid(Function):
         return 1 / (1 + np.exp(-x))
 
     @staticmethod
-    def forward(ctx: "Sigmoid", x: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Sigmoid", x: Tensor) -> np.ndarray:
+        x = Function._unwrap_args(x)
         ctx.save_for_backward(x)
+
         return Sigmoid._forward(x)
 
     @staticmethod
     def backward(ctx: "Sigmoid", grad_output: np.ndarray) -> np.ndarray:
         x = ctx.saved_tensors[0]
+
         sig = Sigmoid._forward(x)
         grad = sig * (1 - sig)
         return grad * grad_output
@@ -124,7 +140,9 @@ class Sigmoid(Function):
 
 class Exp(Function):
     @staticmethod
-    def forward(ctx: "Exp", x: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Exp", x: Tensor) -> np.ndarray:
+        x = Function._unwrap_args(x)
+
         x_exp = np.exp(x)
         ctx.save_for_backward(x_exp)
         return x_exp
@@ -137,7 +155,8 @@ class Exp(Function):
 
 class Log(Function):
     @staticmethod
-    def forward(ctx: "Log", x: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Log", x: Tensor) -> np.ndarray:
+        x = Function._unwrap_args(x)
         x = x + 1e-8
         ctx.save_for_backward(x)
         return np.log(x)
@@ -150,8 +169,8 @@ class Log(Function):
 
 class Neg(Function):
     @staticmethod
-    def forward(ctx: "Neg", x: np.ndarray) -> np.ndarray:
-        ctx.save_for_backward(x)
+    def forward(ctx: "Neg", x: Tensor) -> np.ndarray:
+        x = Function._unwrap_args(x)
         return -x
 
     @staticmethod
@@ -179,10 +198,11 @@ class Softmax(Function):
     @staticmethod
     def forward(
         ctx: "Softmax",
-        x: np.ndarray,
+        x: Tensor,
         axis: Union[int, tuple[int, int]],
         temperature: float,
     ) -> np.ndarray:
+        x = Function._unwrap_args(x)
         softmax_output = Softmax._forward(x, axis=axis, temperature=temperature)
         ctx.save_for_backward(softmax_output, axis)
         return softmax_output

@@ -1,15 +1,15 @@
 from typing import Tuple
 import numpy as np
-from .Function import Function, ValueLike
-from .UOps import Softmax
+
 from simplegrad import Tensor
+from simplegrad.utils import _assert_allowed_backward_call
+from .Function import Function, ValueLike
 
 
 class Add(Function):
     @staticmethod
-    def forward(ctx: "Add", x: np.ndarray, y: ValueLike) -> np.ndarray:
-        print("C", x)
-        print("Y", y)
+    def forward(ctx: "Add", x: Tensor, y: ValueLike) -> np.ndarray:
+        x, y = Function._unwrap_args(x, y)
         return x + y
 
     @staticmethod
@@ -19,7 +19,8 @@ class Add(Function):
 
 class Sub(Function):
     @staticmethod
-    def forward(ctx: "Sub", x: np.ndarray, y: ValueLike) -> np.ndarray:
+    def forward(ctx: "Sub", x: Tensor, y: ValueLike) -> np.ndarray:
+        x, y = Function._unwrap_args(x, y)
         return x - y
 
     @staticmethod
@@ -29,13 +30,17 @@ class Sub(Function):
 
 class Mul(Function):
     @staticmethod
-    def forward(ctx: "Mul", x: np.ndarray, y: ValueLike) -> np.ndarray:
+    def forward(ctx: "Mul", x: Tensor, y: ValueLike) -> np.ndarray:
         ctx.save_for_backward(x, y)
+        x, y = Function._unwrap_args(x, y)
         return x * y
 
     @staticmethod
     def backward(ctx: "Mul", grad_output: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        x_in, y_in = ctx.saved_tensors
+        x_saved, y_saved = ctx.saved_tensors
+        _assert_allowed_backward_call(x_saved, y_saved)
+        x_in, y_in = Function._unwrap_args(x_saved, y_saved)
+
         x_grad = grad_output * y_in
         y_grad = grad_output * x_in
         return x_grad, y_grad
@@ -43,14 +48,22 @@ class Mul(Function):
 
 class Div(Function):
     @staticmethod
-    def forward(ctx: "Div", x: np.ndarray, y: ValueLike) -> np.ndarray:
-        y = y + 1e-8
+    def forward(ctx: "Div", x: Tensor, y: ValueLike) -> np.ndarray:
+        from simplegrad import Tensor
+
+        if isinstance(y, Tensor):
+            y.item = y.item + 1e-8
+        else:
+            y = y + 1e-8
         ctx.save_for_backward(x, y)
+        x, y = Function._unwrap_args(x, y)
         return x / y
 
     @staticmethod
     def backward(ctx: "Div", grad_output: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        x_in, y_in = ctx.saved_tensors
+        x_saved, y_saved = ctx.saved_tensors
+        _assert_allowed_backward_call(x_saved, y_saved)
+        x_in, y_in = Function._unwrap_args(x_saved, y_saved)
 
         x_grad = (1 / y_in) * grad_output
         y_grad = -x_in * (1 / (y_in**2)) * grad_output
@@ -60,44 +73,55 @@ class Div(Function):
 
 class Pow(Function):
     @staticmethod
-    def forward(ctx: "Pow", base: np.ndarray, exponent: ValueLike) -> np.ndarray:
-        assert (
-            len(exponent.shape) == 1 and exponent.shape[0] == 1
-        ), f"Expected exponent to be of shape (1,), but got: {exponent.shape}"
-        exponent = np.array(exponent)
+    def forward(ctx: "Pow", base: Tensor, exponent: ValueLike) -> np.ndarray:
         ctx.save_for_backward(base, exponent)
+        base, exponent = Function._unwrap_args(base, exponent)
         return np.pow(base, exponent)
 
     @staticmethod
     def backward(ctx: "Pow", grad_output: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         base, exponent = ctx.saved_tensors
+        _assert_allowed_backward_call(base, exponent)
+        base, exponent = Function._unwrap_args(base, exponent)
 
-        base_grad = exponent * np.pow(base, exponent - 1) * grad_output
+        exponent = np.array(exponent)
 
-        # Compute exponent gradient only where base > 0, otherwise set to 0
-        exponent_grad = np.zeros_like(grad_output)
-        positive_base_mask = base > 0
-        exponent_grad[positive_base_mask] = (
-            np.pow(
-                base[positive_base_mask], exponent[0]
-            )  # Use exponent[0] since it's a scalar
-            * np.log(base[positive_base_mask])
-            * grad_output[positive_base_mask]
-        )
+        result_shape = np.broadcast(base, exponent).shape
+        grad_output_b = np.broadcast_to(grad_output, result_shape)
+        base_b = np.broadcast_to(base, result_shape)
+        exponent_b = np.broadcast_to(exponent, result_shape)
+
+        base_grad = exponent_b * np.power(base_b, exponent_b - 1) * grad_output_b
+
+        safe_mask = base_b > 0
+        local_all = np.zeros_like(grad_output_b)
+        # compute only on safe region to avoid log of non-positive
+        local_all[safe_mask] = np.power(
+            base_b[safe_mask], exponent_b[safe_mask]
+        ) * np.log(base_b[safe_mask])
+
+        if exponent.size == 1 and exponent.shape in [(), (1,)]:
+            # scalar exponent → single gradient value (represented as shape (1,))
+            exponent_grad_val = (local_all * grad_output_b).sum()
+            exponent_grad = np.array([exponent_grad_val], dtype=grad_output.dtype)
+        else:
+            exponent_grad = local_all * grad_output_b
 
         return base_grad, exponent_grad
 
 
 class Dot(Function):
     @staticmethod
-    def forward(ctx: "Dot", x: np.ndarray, y: ValueLike) -> np.ndarray:
-        y = np.array(y)
+    def forward(ctx: "Dot", x: Tensor, y: ValueLike) -> np.ndarray:
         ctx.save_for_backward(x, y)
+        x, y = Function._unwrap_args(x, y)
         return np.matmul(x, y)
 
     @staticmethod
     def backward(ctx: "Dot", grad_output: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         x, y = ctx.saved_tensors
+        _assert_allowed_backward_call(x, y)
+        x, y = Function._unwrap_args(x, y)
 
         # Handle different shapes for broadcasting
         if x.ndim == 1 and y.ndim == 1:
@@ -123,12 +147,14 @@ class Dot(Function):
 class CrossEntropyLoss(Function):
     @staticmethod
     def forward(
-        ctx: "CrossEntropyLoss", logits: np.ndarray, targets: ValueLike
+        ctx: "CrossEntropyLoss", logits: Tensor, targets: ValueLike
     ) -> np.ndarray:
         # we fuse the softmax and the cross entropy loss intro one op to allow for more efficient backprob
-        probs = Softmax._forward(logits, axis=-1)
-        probs = probs + 1e-8
+        probs = logits.softmax(-1)
+        probs.item = probs.item + 1e-8
         ctx.save_for_backward(probs, targets)
+        probs, targets = Function._unwrap_args(probs, targets)
+
         log_probs = np.log(probs)
         loss = -(targets * log_probs).sum(axis=-1)
         return loss.mean()
@@ -136,7 +162,8 @@ class CrossEntropyLoss(Function):
     @staticmethod
     def backward(ctx: "CrossEntropyLoss", grad_output: np.ndarray) -> np.ndarray:
         probs, targets = ctx.saved_tensors
-
+        _assert_allowed_backward_call(probs, targets)
+        probs, targets = Function._unwrap_args(probs, targets)
         grad_logits = (probs - targets) * grad_output
 
         return grad_logits
