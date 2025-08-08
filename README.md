@@ -1,10 +1,17 @@
-## simplegrad
+<h1 align="center">simplegrad</h1>
+
+<p align="center">
+  <img src="./assets/logo.png" width="50%" style="border-radius: 20px;"/>
+</p>
 
 Minimal CPU only autodiff and neural network library built on top of NumPy. It implements a small Tensor type with a dynamic computation graph and reverse‑mode automatic differentiation, plus a lightweight `nn` and `optim` layer for building and training simple (or even complex) models.
 
 Despite its simplicity, the primitives here are enough to compose most building blocks needed for even complex architectures. I built this project to deepen my understanding of frameworks like PyTorch, and I hope it helps others grasp how PyTorch works by studying a minimal, NumPy‑only implementation of its core ideas (tensors, autograd, modules, optimizers).
 
-Core library dependency: only NumPy.
+Core library dependency: **only NumPy.**
+
+
+> **Inspired by [karpathy/micrograd](https://github.com/karpathy/micrograd) and [PyTorch](https://github.com/pytorch/pytorch)**
 
 ### Folder structure
 
