@@ -1,13 +1,15 @@
 import numpy as np
-from typing import Sequence, Union, Optional, Tuple
+from typing import Sequence, Union, Optional, Tuple, Any
+
 from simplegrad.Ops.Function import Function
-from utils import unbroadcast, handle_axis
+from simplegrad.utils import unbroadcast, handle_axis
 
 
 class Tensor:
     def __init__(
         self,
         item: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
+        *,
         requires_grad: bool = False,
     ) -> None:
         self.item: np.ndarray = item
@@ -27,7 +29,7 @@ class Tensor:
         self.item = self.item.astype(np.float32)
 
         self.grad: Optional[np.ndarray] = None
-        self._ctx: Optional["Function"] = None
+        self._ctx: Optional[Function] = None
 
     def zero_grad(self):
         self.grad = None
@@ -38,8 +40,32 @@ class Tensor:
     def shape(self) -> Tuple[int, ...]:
         return self.item.shape
 
+    def __getitem__(self, index: Any) -> "Tensor":
+        return self._index(index=index)
+
+    def __setitem__(
+        self, index: Any, value: Union["Tensor", np.ndarray, int, float]
+    ) -> None:
+        # TODO: handle RHS (value) is tensor case
+        # clone current tensor into new one
+        old_self = Tensor(self.item.copy(), requires_grad=self.requires_grad)
+        old_self._ctx = self._ctx
+
+        # Build the copy-slice node on the old-self wrapper
+        res = old_self._copy_slices(index=index, value=value)
+
+        # Graft the new node onto this tensor so downstream ops see it
+        self.item = res.item
+        self.requires_grad = res.requires_grad
+        self._ctx = res._ctx
+
     def backward(self, implicit_fill: bool = True) -> None:
-        if self._ctx is None or not self.requires_grad:
+        if not self.requires_grad:
+            raise ValueError(
+                ".backward() can not be called on a tensor with requires_grad=False"
+            )
+
+        if self._ctx is None:
             return
 
         if self.grad is None and implicit_fill:
@@ -51,20 +77,13 @@ class Tensor:
 
         grads = self._ctx.backward(self._ctx, self.grad)
 
-        if len(self._ctx.parents) == 1 and not isinstance(grads, tuple):
+        parents = self._ctx.parents
+        if len(parents) == 1 and not isinstance(grads, tuple):
             grads = [grads]
 
-        # only extract the gradients needed
-        # we can have less parents than gradients, since we 
-        grads = grads[:len(self._ctx.parents)]
-
-        for p, g in zip(self._ctx.parents, grads):
-            if isinstance(g, tuple):
-                print(p.shape, len(g))
+        for p, g in zip(parents, grads):
             if p.shape != g.shape:
                 g = unbroadcast(g, p.shape)
-            if p.requires_grad == False:
-                continue
             p.grad = g if p.grad is None else p.grad + g
             p.backward(implicit_fill=False)
 
@@ -72,21 +91,39 @@ class Tensor:
     def __add__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         return self.add(other)
 
+    def __radd__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        # addition is commutative; reuse the same op
+        return self.add(other)
+
     def sub(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor": ...
     def __sub__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         return self.sub(other)
 
+    def __rsub__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        return Tensor(other).sub(self)
+
     def mul(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor": ...
     def __mul__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        return self.mul(other)
+
+    def __rmul__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        # multiplication is commutative; reuse the same op
         return self.mul(other)
 
     def div(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor": ...
     def __truediv__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         return self.div(other)
 
+    def __rtruediv__(self, other: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        return Tensor(other).div(self)
+
     def pow(self, exponent: Union["Tensor", np.ndarray, int, float]) -> "Tensor": ...
     def __pow__(self, exponent: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
         return self.pow(exponent)
+
+    def __rpow__(self, base: Union["Tensor", np.ndarray, int, float]) -> "Tensor":
+        base_t = base if isinstance(base, Tensor) else Tensor(base)
+        return base_t.pow(self)
 
     def sum(self, axis: Optional[Union[int, Tuple[int, int]]] = None) -> "Tensor":
         return self._sum(axis=axis)
@@ -116,21 +153,7 @@ class Tensor:
     def cross_entropy_loss(
         self,
         targets: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
-    ): ...
-
-    # def cross_entropy_loss(
-    #     self,
-    #     targets: Union["Tensor", np.ndarray, Sequence[Union[int, float]], int, float],
-    # ):
-    #     targets = Tensor(targets)
-
-    #     probs = self.softmax()
-
-    #     safe_probs = probs + 1e-8
-    #     log_probs = safe_probs.log()
-    #     loss = (targets * log_probs).sum(-1)
-    #     loss = -loss
-    #     return loss.mean()
+    ) -> "Tensor": ...
 
     def neg(self) -> "Tensor": ...
     def __neg__(self):
@@ -141,7 +164,7 @@ class Tensor:
         return f"<{op_name}Backward>"
 
     def __repr__(self) -> str:
-        return f"Tensor(item={self.item}{f", grad={self.grad}" if self.grad is not None else ""}{f", grad_fn={self._get_grad_fn_repr()}" if self._ctx else ""})"
+        return f"Tensor(item={self.item}, requires_grad={self.requires_grad}{f", grad={self.grad}" if self.grad is not None else ""}{f", grad_fn={self._get_grad_fn_repr()}" if self._ctx else ""})"
 
 
 # Import and register operations at module level
@@ -165,6 +188,8 @@ def _register_operations():
             Log,
             Neg,
             Softmax,
+            Index,
+            CopySlices,
         )
 
         register("add", Add)
@@ -182,6 +207,8 @@ def _register_operations():
         register("log", Log)
         register("neg", Neg)
         register("_softmax", Softmax)
+        register("_index", Index)
+        register("_copy_slices", CopySlices)
     except ImportError as e:
         print("Error while registering tensor ops: ", str(e))
 

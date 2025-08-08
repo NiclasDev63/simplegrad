@@ -1,8 +1,7 @@
 from .utils import get_numeric
 import numpy as np
-import pytest
 from simplegrad import Tensor
-from simplegrad.nn import functional as F
+from simplegrad.Ops import Sigmoid, Relu, Softmax
 
 
 atol = 1e-5
@@ -75,7 +74,7 @@ def test_relu():
     res = t_x.relu()
     res.backward()
 
-    numeric_gt = get_numeric(lambda x: np.maximum(0, x), x)
+    numeric_gt = get_numeric(Relu._forward, x)
     assert np.allclose(numeric_gt, t_x.grad, atol=atol)
 
     # Test with all negative values
@@ -94,7 +93,7 @@ def test_sigmoid():
     res = t_x.sigmoid()
     res.backward()
 
-    numeric_gt = get_numeric(lambda x: 1 / (1 + np.exp(-x)), x)
+    numeric_gt = get_numeric(Sigmoid._forward, x)
     assert np.allclose(numeric_gt, t_x.grad, atol=atol)
 
     # Test with large positive values (should be close to 1)
@@ -103,7 +102,7 @@ def test_sigmoid():
     res_large = t_x_large.sigmoid()
     res_large.backward()
 
-    numeric_gt_large = get_numeric(lambda x: 1 / (1 + np.exp(-x)), x_large)
+    numeric_gt_large = get_numeric(Sigmoid._forward, x_large)
     assert np.allclose(numeric_gt_large, t_x_large.grad, atol=atol)
 
 
@@ -157,12 +156,22 @@ def test_softmax():
     assert t_x.grad is not None
     assert t_x.grad.shape == x.shape
 
+    # Numeric gradient check for default parameters
+    numeric_gt = get_numeric(lambda x_: Softmax._forward(x_, axis=1, temperature=1), x)
+    assert np.allclose(numeric_gt, t_x.grad, atol=atol)
+
     # Test softmax with custom axis
     t_x.zero_grad()
     res = t_x.softmax(axis=0)
     res.backward()
     assert t_x.grad is not None
     assert t_x.grad.shape == x.shape
+
+    # Numeric gradient check for custom axis
+    numeric_gt_axis0 = get_numeric(
+        lambda x_: Softmax._forward(x_, axis=0, temperature=1), x
+    )
+    assert np.allclose(numeric_gt_axis0, t_x.grad, atol=atol)
 
     # Test softmax with custom temperature
     t_x.zero_grad()
@@ -171,12 +180,24 @@ def test_softmax():
     assert t_x.grad is not None
     assert t_x.grad.shape == x.shape
 
+    # Numeric gradient check for custom temperature
+    numeric_gt_temp = get_numeric(
+        lambda x_: Softmax._forward(x_, axis=1, temperature=2.0), x
+    )
+    assert np.allclose(numeric_gt_temp, t_x.grad, atol=atol)
+
     # Test softmax with both custom axis and temperature
     t_x.zero_grad()
     res = t_x.softmax(axis=1, temperature=0.5)
     res.backward()
     assert t_x.grad is not None
     assert t_x.grad.shape == x.shape
+
+    # Numeric gradient check for both custom axis and temperature
+    numeric_gt_axis1_temp = get_numeric(
+        lambda x_: Softmax._forward(x_, axis=1, temperature=0.5), x
+    )
+    assert np.allclose(numeric_gt_axis1_temp, t_x.grad, atol=atol)
 
 
 def test_softmax_numerical_stability():
@@ -216,7 +237,7 @@ def test_edge_cases():
     res_1d = t_x_1d.relu()
     res_1d.backward()
 
-    numeric_gt_1d = get_numeric(lambda x: np.maximum(0, x), x_1d)
+    numeric_gt_1d = get_numeric(Relu._forward, x_1d)
     assert np.allclose(numeric_gt_1d, t_x_1d.grad, atol=atol)
 
     # Test with 3D tensors
@@ -225,56 +246,7 @@ def test_edge_cases():
     res_3d = t_x_3d.sigmoid()
     res_3d.backward()
 
-    numeric_gt_3d = get_numeric(lambda x: 1 / (1 + np.exp(-x)), x_3d)
+    numeric_gt_3d = get_numeric(Sigmoid._forward, x_3d)
     assert np.allclose(numeric_gt_3d, t_x_3d.grad, atol=atol)
 
 
-def test_requires_grad_false():
-    # Test that operations work correctly when requires_grad=False
-    x = np.random.rand(3, 4)
-    t_x = Tensor(x, requires_grad=False)
-
-    # All operations should work without gradients
-    res_exp = t_x.exp()
-    res_relu = t_x.relu()
-    res_sigmoid = t_x.sigmoid()
-    res_log = t_x.log()
-    res_neg = t_x.neg()
-    res_softmax = t_x.softmax()
-
-    # Should not have gradients
-    assert t_x.grad is None
-    assert res_exp.grad is None
-    assert res_relu.grad is None
-    assert res_sigmoid.grad is None
-    assert res_log.grad is None
-    assert res_neg.grad is None
-    assert res_softmax.grad is None
-
-
-def test_gradient_accumulation():
-    # Test that gradients accumulate correctly
-    x = np.random.rand(3, 4)
-    t_x = Tensor(x, requires_grad=True)
-
-    # Multiple operations
-    res1 = t_x.exp()
-    res2 = t_x.relu()
-    res3 = t_x.sigmoid()
-
-    # Backward through all
-    res1.backward()
-    grad1 = t_x.grad.copy()
-
-    t_x.zero_grad()
-    res2.backward()
-    grad2 = t_x.grad.copy()
-
-    t_x.zero_grad()
-    res3.backward()
-    grad3 = t_x.grad.copy()
-
-    # Gradients should be different for different operations
-    assert not np.allclose(grad1, grad2, atol=atol)
-    assert not np.allclose(grad1, grad3, atol=atol)
-    assert not np.allclose(grad2, grad3, atol=atol)

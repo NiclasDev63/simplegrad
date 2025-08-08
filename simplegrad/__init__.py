@@ -1,4 +1,4 @@
 from .Tensor import Tensor
-from . import nn
+from . import nn, utils
 
-__all__ = ["Tensor", "nn"]
+__all__ = ["Tensor", "nn", "utils"]

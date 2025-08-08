@@ -1,25 +1,25 @@
 from typing import Tuple
 import numpy as np
-from .Function import Function
+from .Function import Function, ValueLike
 from .UOps import Softmax
+from simplegrad import Tensor
 
 
 class Add(Function):
     @staticmethod
-    def forward(ctx: "Add", x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        ctx.save_for_backward(x, y)
+    def forward(ctx: "Add", x: np.ndarray, y: ValueLike) -> np.ndarray:
+        print("C", x)
+        print("Y", y)
         return x + y
 
     @staticmethod
     def backward(ctx: "Add", grad_output: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        x, y = ctx.saved_tensors
         return grad_output, grad_output
 
 
 class Sub(Function):
     @staticmethod
-    def forward(ctx: "Sub", x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        ctx.save_for_backward(x, y)
+    def forward(ctx: "Sub", x: np.ndarray, y: ValueLike) -> np.ndarray:
         return x - y
 
     @staticmethod
@@ -29,7 +29,7 @@ class Sub(Function):
 
 class Mul(Function):
     @staticmethod
-    def forward(ctx: "Mul", x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Mul", x: np.ndarray, y: ValueLike) -> np.ndarray:
         ctx.save_for_backward(x, y)
         return x * y
 
@@ -43,7 +43,7 @@ class Mul(Function):
 
 class Div(Function):
     @staticmethod
-    def forward(ctx: "Div", x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Div", x: np.ndarray, y: ValueLike) -> np.ndarray:
         y = y + 1e-8
         ctx.save_for_backward(x, y)
         return x / y
@@ -60,10 +60,11 @@ class Div(Function):
 
 class Pow(Function):
     @staticmethod
-    def forward(ctx: "Pow", base: np.ndarray, exponent: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Pow", base: np.ndarray, exponent: ValueLike) -> np.ndarray:
         assert (
             len(exponent.shape) == 1 and exponent.shape[0] == 1
         ), f"Expected exponent to be of shape (1,), but got: {exponent.shape}"
+        exponent = np.array(exponent)
         ctx.save_for_backward(base, exponent)
         return np.pow(base, exponent)
 
@@ -89,7 +90,8 @@ class Pow(Function):
 
 class Dot(Function):
     @staticmethod
-    def forward(ctx: "Dot", x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    def forward(ctx: "Dot", x: np.ndarray, y: ValueLike) -> np.ndarray:
+        y = np.array(y)
         ctx.save_for_backward(x, y)
         return np.matmul(x, y)
 
@@ -121,7 +123,7 @@ class Dot(Function):
 class CrossEntropyLoss(Function):
     @staticmethod
     def forward(
-        ctx: "CrossEntropyLoss", logits: np.ndarray, targets: np.ndarray
+        ctx: "CrossEntropyLoss", logits: np.ndarray, targets: ValueLike
     ) -> np.ndarray:
         # we fuse the softmax and the cross entropy loss intro one op to allow for more efficient backprob
         probs = Softmax._forward(logits, axis=-1)

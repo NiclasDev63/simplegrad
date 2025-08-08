@@ -5,4 +5,17 @@ from .Parameter import Parameter
 from .Sequential import Sequential
 from . import functional
 
-__all__ = ["Linear", "xavier_init", "Module", "Parameter", "Sequential", "functional"]
+try:
+    from .MNISTLoader import MNISTLoader
+except Exception:  # optional dependency (datasets)
+    MNISTLoader = None
+
+__all__ = [
+    "Linear",
+    "xavier_init",
+    "Module",
+    "Parameter",
+    "Sequential",
+    "functional",
+    "MNISTLoader",
+]
